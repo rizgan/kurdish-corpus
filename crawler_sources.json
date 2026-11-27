@@ -196,6 +196,31 @@
       "homepages": ["https://www.rojname.tr/"],
       "feeds": ["https://www.rojname.tr/feeds/posts/default?alt=rss"],
       "sitemaps": ["https://www.rojname.tr/sitemap.xml"]
+    },
+    {
+      "id": "niviskar",
+      "name": "Nivîskar",
+      "domains": ["niviskar.org"],
+      "article_regex": "^/[^/]+\\.html$",
+      "homepages": ["https://niviskar.org/blog"],
+      "sitemaps": ["https://niviskar.org/sitemap.xml"]
+    },
+    {
+      "id": "kurmancipirtukxane",
+      "name": "Kurmancî Pirtûkxane",
+      "domains": ["kurmancipirtukxane.com"],
+      "article_regex": "^/[^/]+/$",
+      "homepages": [],
+      "feeds": ["https://kurmancipirtukxane.com/feed/"],
+      "sitemaps": ["https://kurmancipirtukxane.com/wp-sitemap-posts-post-1.xml"]
+    },
+    {
+      "id": "diyarname",
+      "name": "DiyarName",
+      "domains": ["diyarname.com"],
+      "article_regex": "^/(?:news\\.php|nivis/[^/]+_\\d+/?)$",
+      "homepages": ["https://diyarname.com/", "https://diyarname.com/category.php?Idx=102", "https://diyarname.com/category.php?Idx=100"],
+      "sitemaps": []
     }
   ]
 }
