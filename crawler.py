@@ -771,6 +771,7 @@ class Crawler:
                     label = result.get("label", "unknown")
                     trusted_unknown = (
                         label == "unknown"
+                        and self.kmr_model is not None
                         and self._trusted_kmr_section(final_url, source)
                         and self._looks_kurmanji(text, final_url, source)
                     )
