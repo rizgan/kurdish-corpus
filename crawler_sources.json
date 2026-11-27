@@ -160,6 +160,42 @@
       "article_paths": ["/ku/calaki/"],
       "homepages": ["https://www.diyarbakir.bel.tr/ku"],
       "sitemaps": ["https://www.diyarbakir.bel.tr/sitemap.xml"]
+    },
+    {
+      "id": "lalishduhok",
+      "name": "Lalish Duhok",
+      "domains": ["lalishduhok.com"],
+      "article_regex": "/post/\\d+/?$",
+      "homepages": ["https://lalishduhok.com/?lang=ku"],
+      "feeds": ["https://lalishduhok.com/feed/?lang=ku"],
+      "sitemaps": ["https://lalishduhok.com/sitemap_index.xml"]
+    },
+    {
+      "id": "candname",
+      "name": "ÇandName",
+      "domains": ["candname.com"],
+      "article_regex": "^/[^/]+-[^/]+/?$",
+      "homepages": ["https://candname.com/"],
+      "feeds": ["https://candname.com/feed/"],
+      "sitemaps": ["https://candname.com/sitemap.xml"]
+    },
+    {
+      "id": "kovarahuner",
+      "name": "Kovara Huner",
+      "domains": ["kovarahuner.org"],
+      "article_regex": "^/(?!category/|tag/|author/)[^/]+/[^/]+/?$",
+      "homepages": ["https://kovarahuner.org/"],
+      "feeds": ["https://kovarahuner.org/feed/"],
+      "sitemaps": ["https://kovarahuner.org/sitemap.xml"]
+    },
+    {
+      "id": "rojname_tr",
+      "name": "Rojname.tr",
+      "domains": ["rojname.tr"],
+      "article_regex": "^/\\d{4}/\\d{2}/[^/]+\\.html$",
+      "homepages": ["https://www.rojname.tr/"],
+      "feeds": ["https://www.rojname.tr/feeds/posts/default?alt=rss"],
+      "sitemaps": ["https://www.rojname.tr/sitemap.xml"]
     }
   ]
 }

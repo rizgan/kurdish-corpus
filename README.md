@@ -66,3 +66,12 @@ sudo -u kurdish-corpus env DATA_DIR=/var/lib/kurdish-corpus \
 sudo -u kurdish-corpus env DATA_DIR=/var/lib/kurdish-corpus \
   /opt/kurdish-corpus/venv/bin/python /opt/kurdish-corpus/report.py --json --sample-errors 10
 ```
+
+## Rojname.tr extraction
+
+The crawler reads the Blogger post body and discards navigation. For ambiguous texts with a positive Kurmanji score, it can use the local fastText language model as a second check. Install the optional Debian/Ubuntu dependency and model with the commands below.
+
+```sh
+sudo apt-get install fasttext
+sudo curl -fL https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -o /var/lib/kurdish-corpus/lid.176.ftz
+```

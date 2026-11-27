@@ -64,3 +64,12 @@ sudo -u kurdish-corpus env DATA_DIR=/var/lib/kurdish-corpus \
 sudo -u kurdish-corpus env DATA_DIR=/var/lib/kurdish-corpus \
   /opt/kurdish-corpus/venv/bin/python /opt/kurdish-corpus/report.py --json --sample-errors 10
 ```
+
+## Извлечение статей Rojname.tr
+
+Обходчик читает основной блок статьи Blogger и отбрасывает навигацию. Для неопределённых текстов с положительной оценкой курманджи он может использовать локальную модель fastText для второй проверки. Установка на Debian и Ubuntu приведена ниже.
+
+```sh
+sudo apt-get install fasttext
+sudo curl -fL https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -o /var/lib/kurdish-corpus/lid.176.ftz
+```

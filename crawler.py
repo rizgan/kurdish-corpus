@@ -19,6 +19,7 @@ import datetime
 import argparse
 import os
 import re
+import subprocess
 import sqlite3
 import sys
 import time
@@ -70,6 +71,21 @@ class LinkParser(HTMLParser):
             href = dict(attrs).get("href")
             if href:
                 self.links.append(href)
+
+
+def rojname_article_text(markup):
+    from lxml import html as lxml_html
+
+    page = lxml_html.fromstring(markup)
+    bodies = page.xpath("//div[contains(concat(' ', normalize-space(@class), ' '), ' post-body ') and starts-with(@id, 'post-body-')]")
+    if len(bodies) != 1:
+        return ""
+    body = bodies[0]
+    for element in body.xpath(".//script|.//style|.//nav|.//aside|.//iframe|.//form"):
+        element.drop_tree()
+    for element in body.xpath(".//br|.//p|.//div|.//li"):
+        element.tail = "\n" + (element.tail or "")
+    return "\n".join(line.strip() for line in body.text_content().splitlines() if line.strip())
 
 
 class PostTextParser(HTMLParser):
@@ -220,6 +236,8 @@ class Crawler:
         if source == "azadiya_welat" and path.rstrip("/") in {
             "", "/cihan", "/jin", "/niviskar", "/hevpeyvin", "/forum"
         }:
+            return False
+        if source == "lalishduhok" and urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("lang") != ["ku"]:
             return False
         pattern = self.sources[source].get("article_regex")
         return not pattern or re.search(pattern, path, re.I) is not None
@@ -538,13 +556,28 @@ class Crawler:
         return (explicit and (hits >= 5 or distinctive >= 5 or strong_hits >= 3)) or (
             hits >= 8 and (distinctive >= 2 or strong_hits >= 3))
 
-    def classify_kurmanji_text(self, text):
+    def classify_kurmanji_text(self, text, source=None):
         """Return the optional high-confidence kmr/Zazaki model result."""
         if self.kmr_model is None:
             return {"label": "unknown", "score": None,
                     "reason": self.kmr_model_error or "model_unavailable"}
         from langid_kurdish import classify
-        return classify(text, self.kmr_model)
+        result = classify(text, self.kmr_model)
+        if (source == "rojname_tr" and result["label"] == "unknown"
+                and (result.get("score") or 0) > 0):
+            model_path = self.data_dir / "lid.176.ftz"
+            if model_path.is_file():
+                try:
+                    prediction = subprocess.run(
+                        ["fasttext", "predict-prob", str(model_path), "-"],
+                        input=" ".join(text.split()) + "\n", text=True, encoding="utf-8",
+                        capture_output=True, check=True, timeout=5,
+                    ).stdout.split()
+                    if len(prediction) == 2 and prediction[0] == "__label__ku" and float(prediction[1]) >= 0.85:
+                        return {**result, "label": "kmr_Latn", "reason": "positive_kmr_score_and_fasttext_ku"}
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    pass
+        return result
 
     def _trusted_kmr_section(self, url, source):
         config = self.sources[source]
@@ -664,7 +697,7 @@ class Crawler:
             rejected = []
             for row in rows:
                 text = row[2] if isinstance(row[2], str) else zlib.decompress(row[2]).decode("utf-8")
-                result = self.classify_kurmanji_text(text)
+                result = self.classify_kurmanji_text(text, row[4])
                 label = result.get("label", "unknown")
                 if label not in ("kmr_Latn", "zazaki"):
                     label = "unknown"
@@ -743,8 +776,11 @@ class Crawler:
                 if not self._allowed_page(final_url, source):
                     raise ValueError("article redirected outside configured source domain")
                 html = self._decode_html(payload, final_url)
-                text = trafilatura.extract(html, url=final_url, include_comments=False,
-                                           include_tables=False, favor_precision=True)
+                if source == "rojname_tr":
+                    text = rojname_article_text(html)
+                else:
+                    text = trafilatura.extract(html, url=final_url, include_comments=False,
+                                               include_tables=False, favor_precision=True)
                 if source == "anha" and (not text or len(text.strip()) < 160):
                     post_text = PostTextParser()
                     post_text.feed(html)
@@ -767,7 +803,7 @@ class Crawler:
                     self.db.commit()
                     continue
                 if self.kmr_model_configured:
-                    result = self.classify_kurmanji_text(text)
+                    result = self.classify_kurmanji_text(text, source)
                     label = result.get("label", "unknown")
                     trusted_unknown = (
                         label == "unknown"
