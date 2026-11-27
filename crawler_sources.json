@@ -7,8 +7,10 @@
       "name": "Rudaw Kurmanji",
       "domains": ["rudaw.net"],
       "language_path": "/kurmanci",
+      "trusted_language_path": "/kurmanci/",
       "article_paths": ["/kurmanci/"],
       "article_regex": "^/kurmanci/.*/\\d+/?$",
+      "quarantine_url_regex": "^/kurmanci/categories/multimedia/?$",
       "homepages": ["https://www.rudaw.net/kurmanci"],
       "sitemaps": ["https://www.rudaw.net/sitemap.xml"]
     },
@@ -17,7 +19,8 @@
       "name": "Kurdistan 24 Kurmanji",
       "domains": ["kurdistan24.net"],
       "language_path": "/kmr",
-      "article_paths": ["/kmr/"],
+      "trusted_language_path": "/kmr/story/",
+      "article_paths": ["/kmr/story/"],
       "homepages": ["https://www.kurdistan24.net/kmr"],
       "sitemaps": ["https://www.kurdistan24.net/sitemap.xml"]
     },
@@ -26,15 +29,18 @@
       "name": "ANHA Kurmanji",
       "domains": ["hawarnews.com"],
       "language_path": "/kr",
+      "trusted_language_path": "/kr/",
       "article_paths": ["/kr/"],
       "homepages": ["https://hawarnews.com/kr/"],
-      "sitemaps": ["https://hawarnews.com/sitemap.xml"]
+      "sitemaps": ["https://hawarnews.com/kr/sitemap.xml"]
     },
     {
       "id": "anf",
       "name": "ANF Kurmanji",
       "domains": ["anf-news.com"],
       "language_path": "/",
+      "trusted_language_host": "kurmanci.anf-news.com",
+      "trusted_language_path": "/",
       "article_paths": ["/"],
       "homepages": ["https://kurmanci.anf-news.com/"],
       "sitemaps": ["https://kurmanci.anf-news.com/sitemap.xml"]
@@ -46,7 +52,7 @@
       "language_path": "/",
       "article_paths": ["/"],
       "homepages": ["https://botantimes.com/"],
-      "sitemaps": ["https://botantimes.com/sitemap.xml"]
+      "sitemaps": ["https://www.botantimes.com/sitemap.xml"]
     },
     {
       "id": "azadiya_welat",
@@ -54,6 +60,7 @@
       "domains": ["azadiyawelat1.com"],
       "language_path": "/",
       "article_paths": ["/"],
+      "quarantine_url_regex": "^/(?:cihan|jin|niviskar|hevpeyvin|forum)/?$|^/$",
       "homepages": ["https://azadiyawelat1.com/"],
       "sitemaps": ["https://azadiyawelat1.com/sitemap.xml"]
     },
@@ -62,9 +69,12 @@
       "name": "JINHA",
       "domains": ["jinhaagency.com"],
       "language_path": "/ku",
+      "trusted_language_path": "/ku/",
       "article_paths": ["/ku/"],
+      "article_regex": "^/ku/[^/]+/.+-\\d+/?$",
+      "quarantine_url_regex": "^/ku/[^/]+/?$",
       "homepages": ["https://jinhaagency.com/ku"],
-      "sitemaps": ["https://jinhaagency.com/sitemap.xml"]
+      "sitemaps": ["https://jinhaagency.com/ku/sitemap.xml"]
     },
     {
       "id": "bianet",
@@ -74,7 +84,7 @@
       "article_paths": ["/yazi/"],
       "homepages": ["https://bianet.org/"],
       "feeds": ["https://bianet.org/api/Category/CategoryLatestContentGetList?LanguageId=4&CategoryId=3"],
-      "sitemaps": ["https://bianet.org/sitemap.xml"]
+      "sitemaps": ["https://bianet.org/sitemap/yazilar"]
     },
     {
       "id": "avestakurd",
@@ -92,16 +102,17 @@
       "language_path": "/",
       "article_paths": ["/"],
       "homepages": ["https://rojnameyanewroz3.com/"],
-      "sitemaps": ["https://rojnameyanewroz3.com/sitemap.xml"]
+      "sitemaps": ["https://rojnameyanewroz3.com/sitemap_index.xml"]
     },
     {
       "id": "rojnews",
       "name": "Rojnews Kurmancî",
       "domains": ["rojnews.news"],
       "language_path": "/ku",
+      "trusted_language_path": "/ku/",
       "article_paths": ["/ku/"],
       "homepages": ["https://rojnews.news/ku/"],
-      "sitemaps": ["https://rojnews.news/sitemap_index.xml", "https://rojnews.news/sitemap.xml"]
+      "sitemaps": ["https://rojnews.news/ku/wp-sitemap.xml", "https://rojnews.news/sitemap.xml"]
     },
     {
       "id": "pukmedia",
@@ -145,6 +156,7 @@
       "name": "Diyarbakır Metropolitan Municipality Kurmanji",
       "domains": ["diyarbakir.bel.tr"],
       "language_path": "/ku/",
+      "trusted_language_path": "/ku/",
       "article_paths": ["/ku/calaki/"],
       "homepages": ["https://www.diyarbakir.bel.tr/ku"],
       "sitemaps": ["https://www.diyarbakir.bel.tr/sitemap.xml"]

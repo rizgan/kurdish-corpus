@@ -2,6 +2,11 @@
 
 Run with python crawler.py. Set DATA_DIR to choose where the durable SQLite
 queue is stored. Article text is passed to Store(data_dir).add(...).
+
+If DATA_DIR/kmr_zazaki_ngram.json exists, only high-confidence kmr_Latn model
+results are accepted on mixed-language sources. A strong local heuristic may
+also retain unknown model results inside explicitly trusted Kurmanji sections.
+Confident Zazaki results are always rejected.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import urllib.parse
 import urllib.request
 import urllib.robotparser
 import xml.etree.ElementTree as ET
+import zlib
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -35,8 +41,7 @@ HOST_DELAY_SECONDS = 2.0
 MAX_ATTEMPTS = 5
 LEASE_SECONDS = 300
 MAX_SITEMAPS_PER_RUN = 24
-MAX_SITEMAP_BYTES = 128 * 1024 * 1024
-KM_RUNE = re.compile(r"[çÇêÊîÎşŞûÛ]")
+MAX_SITEMAP_BYTES = 64 * 1024 * 1024
 KM_DISTINCTIVE_RUNE = re.compile(r"[êîûÊÎÛ]")
 KM_WORDS = set("ez tu ew em hûn wan ji bi di û ku ne ye heye dike kirin got rojê gelê kurdî kurdistanê kurmancî dema piştî berî ji bo li ser êdî çima çawa kesên dibêje dibêjin lê her wê niha xwe civak heta pêş".split())
 TR_WORDS = set("bir bu ve ile için olarak olan daha ancak fakat çünkü tarafından yapılan yapıldı edildi dedi söyledi açıklama sonra önce arasında bugün".split())
@@ -67,6 +72,47 @@ class LinkParser(HTMLParser):
                 self.links.append(href)
 
 
+class PostTextParser(HTMLParser):
+    """Small HTML fallback for ANHA's div.post-text paragraphs."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.post_level = None
+        self.p_depth = 0
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag.lower() == "div" and "post-text" in (attrs.get("class") or "").split():
+            self.post_level = len(self.stack)
+        if tag.lower() == "p" and self.post_level is not None:
+            self.p_depth += 1
+            self.parts.append("\n")
+        if tag.lower() not in {"area", "base", "br", "col", "embed", "hr", "img", "input",
+                               "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append(tag.lower())
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag == "p" and self.p_depth:
+            self.p_depth -= 1
+            self.parts.append("\n")
+        if tag == "div" and self.post_level is not None and len(self.stack) - 1 == self.post_level:
+            self.post_level = None
+            self.p_depth = 0
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i] == tag:
+                del self.stack[i:]
+                break
+
+    def handle_data(self, data):
+        if self.post_level is not None and self.p_depth and data.strip():
+            self.parts.append(data.strip())
+
+    def text(self):
+        return re.sub(r"\s+", " ", " ".join(self.parts)).strip()
+
+
 def load_sources():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
         return json.load(f)["sources"]
@@ -76,17 +122,37 @@ def host_key(url):
     return (urllib.parse.urlsplit(url).hostname or "").lower()
 
 
+def ascii_iri(url):
+    parts = urllib.parse.urlsplit(url)
+    path = urllib.parse.quote(parts.path, safe="/%:@!$&'()*+,;=-._~")
+    query = urllib.parse.quote(parts.query, safe="/?%:@!$&'()*+,;=-._~&=")
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, query, parts.fragment))
+
+
 class Crawler:
     def __init__(self, data_dir, sources):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(self.data_dir / "crawler.sqlite3"), timeout=30)
+        self._closed = False
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.sources = {s["id"]: s for s in sources}
         self.last_request = {}
         self.robots = {}
+        self.content_types = {}
+        self.kmr_model = None
+        self.kmr_model_error = None
+        model_path = self.data_dir / "kmr_zazaki_ngram.json"
+        self.kmr_model_configured = model_path.is_file()
+        if model_path.is_file():
+            try:
+                from langid_kurdish import load_model
+                self.kmr_model = load_model(model_path)
+            except Exception as exc:
+                self.kmr_model_error = str(exc)
+                print(f"language model unavailable; new web records will be skipped: {exc}", file=sys.stderr)
         self._schema()
         self._prepare_sitemaps()
 
@@ -104,6 +170,9 @@ class Crawler:
             updated_at REAL NOT NULL
           );
           CREATE INDEX IF NOT EXISTS page_work ON pages(state,next_attempt,lease_until);
+          CREATE INDEX IF NOT EXISTS page_source_ready ON pages(source,state,discovered_at);
+          CREATE INDEX IF NOT EXISTS page_ready_source ON pages(state,source,discovered_at);
+          CREATE INDEX IF NOT EXISTS sitemap_source_state ON sitemaps(source,state,next_attempt);
           CREATE TABLE IF NOT EXISTS host_backoff(
             host TEXT PRIMARY KEY, until_at REAL NOT NULL, reason TEXT NOT NULL DEFAULT ''
           );
@@ -148,10 +217,15 @@ class Crawler:
         routes = self.sources[source].get("article_paths", [])
         if routes and not any(path.startswith(route.lower()) for route in routes):
             return False
+        if source == "azadiya_welat" and path.rstrip("/") in {
+            "", "/cihan", "/jin", "/niviskar", "/hevpeyvin", "/forum"
+        }:
+            return False
         pattern = self.sources[source].get("article_regex")
         return not pattern or re.search(pattern, path, re.I) is not None
 
     def _queue_page(self, url, source, now=None):
+        url = ascii_iri(url)
         if not self._allowed_page(url, source):
             return
         url, _ = urllib.parse.urldefrag(url)
@@ -172,11 +246,11 @@ class Crawler:
                     if not self._get_robots(url).can_fetch(USER_AGENT, url):
                         print(f"homepage disallowed by robots.txt: {url}", file=sys.stderr)
                         continue
-                    final_url, payload = self._get(url)
+                    final_url, payload = self._get(url, max_bytes=16 * 1024 * 1024)
                     if not self._allowed_source(final_url, source_id):
                         raise ValueError("homepage redirected outside configured source domain")
                     parser = LinkParser()
-                    parser.feed(payload.decode("utf-8", "replace"))
+                    parser.feed(self._decode_html(payload, final_url))
                     now = time.time()
                     for href in parser.links:
                         link = urllib.parse.urljoin(final_url, href)
@@ -192,11 +266,11 @@ class Crawler:
                     if not self._get_robots(url).can_fetch(USER_AGENT, url):
                         print(f"feed disallowed by robots.txt: {url}", file=sys.stderr)
                         continue
-                    final_url, payload = self._get(url)
+                    final_url, payload = self._get(url, max_bytes=16 * 1024 * 1024)
                     if not self._allowed_source(final_url, source_id):
                         raise ValueError("feed redirected outside configured source domain")
                     now = time.time()
-                    raw = payload.decode("utf-8", "replace")
+                    raw = self._decode_html(payload, final_url)
                     try:
                         candidates = []
                         if raw.lstrip().startswith("<"):
@@ -243,8 +317,16 @@ class Crawler:
         robots_url = urllib.parse.urlunsplit((urllib.parse.urlsplit(url).scheme, host, "/robots.txt", "", ""))
         rp.set_url(robots_url)
         try:
-            _, payload = self._get(robots_url)
-            rp.parse(payload[:512 * 1024].decode("utf-8", "replace").splitlines())
+            _, payload = self._get(robots_url, max_bytes=1024 * 1024)
+            lines = payload[:512 * 1024].decode("utf-8", "replace").splitlines()
+            # RobotFileParser can merge adjacent user-agent groups when an
+            # empty Disallow is removed. Convert it to an explicit allow-all
+            # rule so subsequent bot-specific restrictions stay scoped.
+            lines = ["Allow: /" if re.match(r"^\s*Disallow\s*:\s*$", line, re.I) else line
+                     for line in lines]
+            rp.parse(lines)
+        except DeferredRequest:
+            raise
         except urllib.error.HTTPError as e:
             if e.code in (401, 403) or e.code >= 500:
                 rp.parse(["User-agent: *", "Disallow: /"])
@@ -255,7 +337,8 @@ class Crawler:
         self.robots[host] = rp
         return rp
 
-    def _get(self, url):
+    def _get(self, url, max_bytes=None):
+        url = ascii_iri(url)
         host = host_key(url)
         row = self.db.execute("SELECT until_at FROM host_backoff WHERE host=?", (host,)).fetchone()
         if row and row["until_at"] > time.time():
@@ -266,11 +349,21 @@ class Crawler:
         req = urllib.request.Request(url, headers={
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/xml,text/xml;q=0.9,*/*;q=0.5",
+            "Accept-Encoding": "gzip, deflate, zstd",
         })
         self.last_request[host] = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
-                return response.geturl(), response.read()
+                if max_bytes is None:
+                    raw = response.read()
+                else:
+                    raw = response.read(max_bytes + 1)
+                    if len(raw) > max_bytes:
+                        raise ValueError(f"response exceeds {max_bytes} byte limit")
+                final_url = ascii_iri(response.geturl())
+                self.content_types[final_url] = response.headers.get("Content-Type", "")
+                body = self._decode_content(raw, response.headers.get("Content-Encoding", ""), max_bytes)
+                return final_url, body
         except urllib.error.HTTPError as e:
             if e.code in (429, 503):
                 retry_after = self._retry_after_seconds(e.headers.get("Retry-After"))
@@ -283,6 +376,50 @@ class Crawler:
                 self.db.commit()
                 raise DeferredRequest(delay, f"HTTP {e.code}; host deferred for {delay:.0f}s") from e
             raise
+
+    @staticmethod
+    def _decode_content(payload, content_encoding, max_output):
+        limit = max_output if max_output is not None else 32 * 1024 * 1024
+        for encoding in reversed([x.strip().lower() for x in content_encoding.split(",") if x.strip()]):
+            if encoding in {"gzip", "x-gzip"}:
+                with gzip.GzipFile(fileobj=io.BytesIO(payload)) as zipped:
+                    payload = zipped.read(limit + 1)
+            elif encoding == "deflate":
+                decompressor = zlib.decompressobj()
+                payload = decompressor.decompress(payload, limit + 1)
+                if decompressor.unconsumed_tail:
+                    raise ValueError("deflate response exceeds decoded size limit")
+            elif encoding == "zstd":
+                import zstandard
+                payload = zstandard.ZstdDecompressor().decompress(payload, max_output_size=limit + 1)
+            else:
+                continue
+            if len(payload) > limit:
+                raise ValueError("decoded response exceeds size limit")
+        return payload
+
+    def _decode_html(self, payload, url):
+        content_type = self.content_types.get(url, "")
+        match = re.search(r"charset\s*=\s*[\"']?([\w.-]+)", content_type, re.I)
+        if not match:
+            head = payload[:8192].decode("ascii", "ignore")
+            match = re.search(r"<meta[^>]+charset=[\"']?([\w.-]+)", head, re.I)
+        encoding = match.group(1) if match else "utf-8"
+        try:
+            decoded = payload.decode(encoding, "replace")
+        except LookupError:
+            decoded = payload.decode("utf-8", "replace")
+        if decoded.count("\ufffd") > max(2, len(decoded) * 0.005):
+            try:
+                from charset_normalizer import from_bytes
+                detected = from_bytes(payload).best()
+                if detected and detected.encoding:
+                    alternate = payload.decode(detected.encoding, "replace")
+                    if alternate.count("\ufffd") < decoded.count("\ufffd"):
+                        decoded = alternate
+            except Exception:
+                pass
+        return decoded
 
     @staticmethod
     def _retry_after_seconds(value):
@@ -303,7 +440,7 @@ class Crawler:
         row = self.db.execute("SELECT attempts FROM " + table + " WHERE url=?", (url,)).fetchone()
         attempts = row[0] if row else 0
         self.db.execute(
-            f"UPDATE {table} SET state='queued',attempts=?,next_attempt=?,last_error=?,updated_at=? WHERE url=?",
+            f"UPDATE {table} SET state='retry',attempts=?,next_attempt=?,last_error=?,updated_at=? WHERE url=?",
             (attempts, time.time() + error.delay, str(error)[:1000], time.time(), url))
         self.db.commit()
 
@@ -311,7 +448,7 @@ class Crawler:
         row = self.db.execute(f"SELECT attempts FROM {table} WHERE url=?", (url,)).fetchone()
         attempts = (row[0] if row else 0) + 1
         delay = min(86400, 60 * (2 ** min(attempts - 1, 10)))
-        state = "failed" if attempts >= MAX_ATTEMPTS else "queued"
+        state = "failed" if attempts >= MAX_ATTEMPTS else "retry"
         self.db.execute(f"UPDATE {table} SET state=?,attempts=?,next_attempt=?,last_error=?,updated_at=? WHERE url=?",
                         (state, attempts, time.time() + delay, str(error)[:1000], time.time(), url))
         self.db.commit()
@@ -321,6 +458,13 @@ class Crawler:
         return root.tag.rsplit("}", 1)[-1].lower() == "sitemapindex"
 
     def process_sitemaps(self, limit=MAX_SITEMAPS_PER_RUN):
+        now = time.time()
+        self.db.execute("UPDATE sitemaps SET state='retry' WHERE state='queued' AND next_attempt>?", (now,))
+        self.db.execute("UPDATE sitemaps SET state='queued' WHERE state='retry' AND next_attempt<=?", (now,))
+        self.db.execute(
+            "UPDATE sitemaps SET state='queued',updated_at=? WHERE state='working' AND updated_at<?",
+            (now, now - LEASE_SECONDS))
+        self.db.commit()
         processed = 0
         while processed < limit:
             row = self.db.execute("SELECT url,source FROM sitemaps WHERE state='queued' AND next_attempt<=? ORDER BY url LIMIT 1",
@@ -335,12 +479,12 @@ class Crawler:
                     raise ValueError("sitemap host is outside configured source domains")
                 if not self._get_robots(url).can_fetch(USER_AGENT, url):
                     raise PermissionError("robots.txt disallows sitemap")
-                final_url, payload = self._get(url)
+                final_url, payload = self._get(url, max_bytes=MAX_SITEMAP_BYTES)
                 if payload[:2] == b"\x1f\x8b":
                     with gzip.GzipFile(fileobj=io.BytesIO(payload)) as zipped:
                         payload = zipped.read(MAX_SITEMAP_BYTES + 1)
                     if len(payload) > MAX_SITEMAP_BYTES:
-                        raise ValueError("decompressed sitemap exceeds 128 MiB limit")
+                        raise ValueError("decompressed sitemap exceeds 64 MiB limit")
                 root = ET.fromstring(payload)
                 now = time.time()
                 for loc in root.findall(".//{*}loc"):
@@ -394,6 +538,23 @@ class Crawler:
         return (explicit and (hits >= 5 or distinctive >= 5 or strong_hits >= 3)) or (
             hits >= 8 and (distinctive >= 2 or strong_hits >= 3))
 
+    def classify_kurmanji_text(self, text):
+        """Return the optional high-confidence kmr/Zazaki model result."""
+        if self.kmr_model is None:
+            return {"label": "unknown", "score": None,
+                    "reason": self.kmr_model_error or "model_unavailable"}
+        from langid_kurdish import classify
+        return classify(text, self.kmr_model)
+
+    def _trusted_kmr_section(self, url, source):
+        config = self.sources[source]
+        trusted_host = config.get("trusted_language_host")
+        if trusted_host and host_key(url) != trusted_host.lower():
+            return False
+        trusted_path = config.get("trusted_language_path")
+        path = urllib.parse.urlsplit(url).path.lower()
+        return bool(trusted_path and path.startswith(trusted_path.lower()))
+
     @staticmethod
     def _is_article_document(url, html, text, meta, title, source):
         path = urllib.parse.urlsplit(url).path.lower()
@@ -404,64 +565,164 @@ class Crawler:
         )
         if any(part in NON_ARTICLE_SEGMENTS for part in segments) and not rudaw_numeric_article:
             return False
-        article_type = bool(re.search(r"property=[\"']og:type[\"'][^>]*content=[\"']article", html, re.I))
-        published = bool(re.search(
+        article_type = bool(re.search(
+            r"<meta\b(?=[^>]*property=[\"']og:type[\"'])(?=[^>]*content=[\"']article[\"'])[^>]*>",
+            html, re.I))
+        published = bool(meta and getattr(meta, "date", None)) or bool(re.search(
             r"(?:article:published_time|datePublished|<meta[^>]+name=[\"']date[\"'])",
             html, re.I))
         if len(segments) < 2 and not article_type and not published:
             return False
+        if source == "azadiya_welat" and segments:
+            if "-" not in segments[-1] and not article_type and not published:
+                return False
         generic = {"home", "homepage", "latest", "search", "category", "categories", "archive", "tag", "tags"}
         if title.strip().lower() in generic:
             return False
         return len(text.strip()) >= 160
 
-    def quarantine_stored_category_urls(self, store):
-        """Move known Rudaw category/menu records out of corpus storage, preserving them."""
+    def quarantine_stored_bad_routes(self, store):
+        """Move only configured, verified bad web routes out of corpus storage."""
         count = 0
-        last_digest = b""
-        while True:
-            batch = store.conn.execute(
-                "SELECT digest,text,url,source,title,date,upstream_source,source_id,license "
-                "FROM documents WHERE source='rudaw' AND url LIKE '%/kurmanci/categories/%' "
-                "AND digest>? ORDER BY digest LIMIT 100", (last_digest,)).fetchall()
-            if not batch:
-                break
-            last_digest = batch[-1][0]
-            selected = []
-            for row in batch:
-                path = urllib.parse.urlsplit(row[2] or "").path.rstrip("/")
-                final_segment = path.rsplit("/", 1)[-1]
-                if not final_segment.isdigit():
-                    selected.append(row)
-            if not selected:
+        sql_candidates = {
+            "rudaw": "url LIKE '%/kurmanci/categories/multimedia' OR url LIKE '%/kurmanci/categories/multimedia/'",
+            "jinha": "url LIKE '%/ku/%' AND instr(trim(substr(url,instr(url,'/ku/')+4),'/'),'/')=0",
+            "azadiya_welat": "(" + " OR ".join(
+                f"url LIKE '%azadiyawelat1.com{path}'"
+                for path in ("/", "/cihan", "/cihan/", "/jin", "/jin/", "/niviskar",
+                             "/niviskar/", "/hevpeyvin", "/hevpeyvin/", "/forum", "/forum/")
+            ) + ")",
+        }
+        for source, sql_filter in sql_candidates.items():
+            if source not in self.sources or not self.sources[source].get("quarantine_url_regex"):
                 continue
-            now = time.time()
-            self.db.executemany(
-                "INSERT OR REPLACE INTO quarantine_documents"
-                "(digest,text,url,source,title,date,upstream_source,source_id,license,quarantined_at,reason)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                [(*tuple(row), now, "Rudaw category/menu URL with nonnumeric final path segment") for row in selected])
-            self.db.commit()
-            store.conn.executemany("DELETE FROM documents WHERE digest=?", [(row[0],) for row in selected])
-            store.commit()
-            count += len(selected)
+            url_pattern = re.compile(self.sources[source]["quarantine_url_regex"], re.I)
+            upper_row = store.conn.execute(
+                f"SELECT MAX(id) FROM documents WHERE source=? AND ({sql_filter})", (source,)).fetchone()
+            upper_id = upper_row[0]
+            if upper_id is None:
+                continue
+            last_id = 0
+            while True:
+                batch = store.conn.execute(
+                    "SELECT id,digest,text,url,source,title,date,upstream_source,source_id,license "
+                    f"FROM documents WHERE source=? AND ({sql_filter}) AND id>? AND id<=? "
+                    "ORDER BY id LIMIT 20", (source, last_id, upper_id)).fetchall()
+                if not batch:
+                    break
+                last_id = batch[-1][0]
+                selected = []
+                for row in batch:
+                    path = urllib.parse.urlsplit(row[3] or "").path
+                    if url_pattern.fullmatch(path):
+                        selected.append(row)
+                if not selected:
+                    continue
+                now = time.time()
+                self.db.executemany(
+                    "INSERT OR REPLACE INTO quarantine_documents"
+                    "(digest,text,url,source,title,date,upstream_source,source_id,license,quarantined_at,reason)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    [(*tuple(row[1:]), now, f"Verified bad route for {source}") for row in selected])
+                self.db.commit()
+                store.conn.executemany("DELETE FROM documents WHERE id=?", [(row[0],) for row in selected])
+                store.commit()
+                count += len(selected)
         return count
 
+    def quarantine_stored_category_urls(self, store):
+        """Backward-compatible name for the configured web-route quarantine."""
+        return self.quarantine_stored_bad_routes(store)
+
+    def classify_stored_web_documents(self, store, quarantine=False):
+        """Classify only documents whose source is one of this crawler's web IDs.
+
+        With quarantine=True, non-kmr records are moved into crawler.sqlite3 so
+        their text and metadata remain recoverable. Other curated/HF sources are
+        excluded by the source-ID filter.
+        """
+        if self.kmr_model is None:
+            raise RuntimeError("kmr_zazaki_ngram.json is not available or could not be loaded")
+        source_ids = tuple(self.sources)
+        placeholders = ",".join("?" for _ in source_ids)
+        counts = {"kmr_Latn": 0, "zazaki": 0, "unknown": 0, "quarantined": 0}
+        max_row = store.conn.execute(
+            f"SELECT MAX(id) FROM documents WHERE source IN ({placeholders})", source_ids).fetchone()
+        upper_id = max_row[0]
+        if upper_id is None:
+            return counts
+        last_id = 0
+        query = (
+            "SELECT id,digest,text,url,source,title,date,upstream_source,source_id,license "
+            f"FROM documents WHERE source IN ({placeholders}) AND id>? AND id<=? ORDER BY id LIMIT 20"
+        )
+        while True:
+            rows = store.conn.execute(query, (*source_ids, last_id, upper_id)).fetchall()
+            if not rows:
+                break
+            last_id = rows[-1][0]
+            rejected = []
+            for row in rows:
+                text = row[2] if isinstance(row[2], str) else zlib.decompress(row[2]).decode("utf-8")
+                result = self.classify_kurmanji_text(text)
+                label = result.get("label", "unknown")
+                if label not in ("kmr_Latn", "zazaki"):
+                    label = "unknown"
+                trusted_unknown = (
+                    label == "unknown"
+                    and self._trusted_kmr_section(row[3], row[4])
+                    and self._looks_kurmanji(text, row[3], row[4])
+                )
+                counts[label] += 1
+                if trusted_unknown:
+                    counts["unknown_trusted_section"] = counts.get("unknown_trusted_section", 0) + 1
+                if quarantine and (label == "zazaki" or (label == "unknown" and not trusted_unknown)):
+                    rejected.append(row)
+            if rejected:
+                now = time.time()
+                reason = "retroactive language model result was not confident kmr_Latn"
+                self.db.executemany(
+                    "INSERT OR REPLACE INTO quarantine_documents"
+                    "(digest,text,url,source,title,date,upstream_source,source_id,license,quarantined_at,reason)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    [(*tuple(row[1:]), now, reason) for row in rejected])
+                self.db.commit()
+                store.conn.executemany("DELETE FROM documents WHERE id=?", [(row[0],) for row in rejected])
+                store.commit()
+                counts["quarantined"] += len(rejected)
+        return counts
+
+    def close(self):
+        if not self._closed:
+            self.db.close()
+            self._closed = True
+
     def process_pages(self, store):
+        now = time.time()
+        self.db.execute("UPDATE pages SET state='retry' WHERE state='queued' AND next_attempt>?", (now,))
+        self.db.execute("UPDATE pages SET state='queued',lease_until=0 WHERE state='retry' AND next_attempt<=?", (now,))
+        self.db.execute("UPDATE pages SET state='queued',lease_until=0 WHERE state='working' AND lease_until<?",
+                        (now,))
+        self.db.commit()
+        refresh_retry_at = now
         while True:
             now = time.time()
+            if now >= refresh_retry_at:
+                self.db.execute("UPDATE pages SET state='queued' WHERE state='retry' AND next_attempt<=?",
+                                (now,))
+                self.db.commit()
+                refresh_retry_at = now + 30
             row = self.db.execute(
-                "SELECT url,source FROM pages "
-                "WHERE ((state='queued' AND next_attempt<=?) OR (state='working' AND lease_until<?)) "
-                "AND source>? ORDER BY source,discovered_at LIMIT 1",
-                (now, now, getattr(self, "_last_source", ""))).fetchone()
+                "SELECT url,source FROM pages INDEXED BY page_ready_source "
+                "WHERE state='queued' AND source>? ORDER BY source,discovered_at LIMIT 1",
+                (getattr(self, "_last_source", ""),)).fetchone()
             if not row:
                 row = self.db.execute(
-                    "SELECT url,source FROM pages "
-                    "WHERE ((state='queued' AND next_attempt<=?) OR (state='working' AND lease_until<?)) "
-                    "ORDER BY source,discovered_at LIMIT 1", (now, now)).fetchone()
+                    "SELECT url,source FROM pages INDEXED BY page_ready_source "
+                    "WHERE state='queued' ORDER BY source,discovered_at LIMIT 1").fetchone()
             if not row:
                 break
+            now = time.time()
             url, source = row["url"], row["source"]
             self._last_source = source
             self.db.execute("UPDATE pages SET state='working',lease_until=?,updated_at=? WHERE url=?",
@@ -478,12 +739,18 @@ class Crawler:
                                     (time.time(), url))
                     self.db.commit()
                     continue
-                final_url, payload = self._get(url)
+                final_url, payload = self._get(url, max_bytes=16 * 1024 * 1024)
                 if not self._allowed_page(final_url, source):
                     raise ValueError("article redirected outside configured source domain")
-                html = payload.decode("utf-8", "replace")
+                html = self._decode_html(payload, final_url)
                 text = trafilatura.extract(html, url=final_url, include_comments=False,
                                            include_tables=False, favor_precision=True)
+                if source == "anha" and (not text or len(text.strip()) < 160):
+                    post_text = PostTextParser()
+                    post_text.feed(html)
+                    fallback = post_text.text()
+                    if fallback:
+                        text = fallback
                 meta = trafilatura.extract_metadata(html, default_url=final_url)
                 title = (meta.title or "").strip() if meta else ""
                 date = (meta.date or "").strip() if meta else ""
@@ -499,6 +766,20 @@ class Crawler:
                                     (time.time(), url))
                     self.db.commit()
                     continue
+                if self.kmr_model_configured:
+                    result = self.classify_kurmanji_text(text)
+                    label = result.get("label", "unknown")
+                    trusted_unknown = (
+                        label == "unknown"
+                        and self._trusted_kmr_section(final_url, source)
+                        and self._looks_kurmanji(text, final_url, source)
+                    )
+                    if label == "zazaki" or (label != "kmr_Latn" and not trusted_unknown):
+                        reason = f"language model {result.get('label', 'unknown')}: {result.get('reason', 'no confident kmr result')}"
+                        self.db.execute("UPDATE pages SET state='skipped',last_error=?,updated_at=? WHERE url=?",
+                                        (reason[:1000], time.time(), url))
+                        self.db.commit()
+                        continue
                 store.add(text.strip(), final_url, source, title=title, date=date)
                 self.db.execute("UPDATE pages SET state='done',attempts=attempts+1,lease_until=0,last_error=NULL,updated_at=? WHERE url=?",
                                 (time.time(), url))
@@ -520,25 +801,36 @@ class Crawler:
             print("queue:", ", ".join(f"{r['state']}={r['n']}" for r in count) or "empty")
             self.process_pages(store)
         finally:
-            self.db.close()
+            self.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Crawl configured Kurmanji web sources")
-    parser.add_argument("--quarantine-stored-category-urls", action="store_true",
-                        help="move already stored Rudaw category URLs to crawler quarantine")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--quarantine-stored-category-urls", action="store_true",
+                         help="move only configured, verified web menu routes to quarantine")
+    actions.add_argument("--classify-stored-web-documents", action="store_true",
+                         help="classify stored documents from crawler source IDs only")
+    actions.add_argument("--quarantine-unclassified-web-documents", action="store_true",
+                         help="quarantine crawler web documents not confidently classified as Kurmanji")
     args = parser.parse_args()
     data_dir = os.environ.get("DATA_DIR", str(HERE / "data"))
     sources = load_sources()
     from store import Store
     with Store(data_dir) as store:
         crawler = Crawler(data_dir, sources)
-        if args.quarantine_stored_category_urls:
-            count = crawler.quarantine_stored_category_urls(store)
-            print(f"quarantined {count} category records; preserved in crawler.sqlite3")
-            crawler.db.close()
-        else:
-            crawler.run(store)
+        try:
+            if args.quarantine_stored_category_urls:
+                count = crawler.quarantine_stored_bad_routes(store)
+                print(f"quarantined {count} verified web-route records; preserved in crawler.sqlite3")
+            elif args.classify_stored_web_documents or args.quarantine_unclassified_web_documents:
+                summary = crawler.classify_stored_web_documents(
+                    store, quarantine=args.quarantine_unclassified_web_documents)
+                print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+            else:
+                crawler.run(store)
+        finally:
+            crawler.close()
 
 
 if __name__ == "__main__":

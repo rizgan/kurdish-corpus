@@ -39,6 +39,7 @@ class Store:
                 self.conn.execute(f"ALTER TABLE documents ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         if "id" in cols:
             self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS documents_digest_uq ON documents(digest)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS documents_by_source ON documents(source)")
         self.conn.execute("CREATE TABLE IF NOT EXISTS checkpoints (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID")
         self._pending = 0
         self.conn.commit()
