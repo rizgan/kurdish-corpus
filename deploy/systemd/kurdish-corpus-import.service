@@ -1,0 +1,26 @@
+[Unit]
+Description=Import and export the Kurmanji corpus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kurdish-corpus
+Group=kurdish-corpus
+WorkingDirectory=/opt/kurdish-corpus
+Environment=DATA_DIR=/var/lib/kurdish-corpus
+EnvironmentFile=-/etc/kurdish-corpus.env
+ExecStart=/opt/kurdish-corpus/venv/bin/python /opt/kurdish-corpus/importer.py import
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=650M
+CPUQuota=70%
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kurdish-corpus
+
+[Install]
+WantedBy=multi-user.target

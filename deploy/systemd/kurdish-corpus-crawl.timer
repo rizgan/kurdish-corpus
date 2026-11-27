@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Kurmanji sources and resume their archive queues
+
+[Timer]
+OnBootSec=5m
+OnUnitInactiveSec=1h
+Unit=kurdish-corpus-crawl.service
+
+[Install]
+WantedBy=timers.target

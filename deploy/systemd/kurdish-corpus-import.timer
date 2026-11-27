@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Kurmanji corpus import
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=kurdish-corpus-import.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,153 @@
+{
+  "version": 2,
+  "description": "Kurmanji language-section URLs, homepage discovery, and sitemap roots.",
+  "sources": [
+    {
+      "id": "rudaw",
+      "name": "Rudaw Kurmanji",
+      "domains": ["rudaw.net"],
+      "language_path": "/kurmanci",
+      "article_paths": ["/kurmanci/"],
+      "article_regex": "^/kurmanci/.*/\\d+/?$",
+      "homepages": ["https://www.rudaw.net/kurmanci"],
+      "sitemaps": ["https://www.rudaw.net/sitemap.xml"]
+    },
+    {
+      "id": "kurdistan24",
+      "name": "Kurdistan 24 Kurmanji",
+      "domains": ["kurdistan24.net"],
+      "language_path": "/kmr",
+      "article_paths": ["/kmr/"],
+      "homepages": ["https://www.kurdistan24.net/kmr"],
+      "sitemaps": ["https://www.kurdistan24.net/sitemap.xml"]
+    },
+    {
+      "id": "anha",
+      "name": "ANHA Kurmanji",
+      "domains": ["hawarnews.com"],
+      "language_path": "/kr",
+      "article_paths": ["/kr/"],
+      "homepages": ["https://hawarnews.com/kr/"],
+      "sitemaps": ["https://hawarnews.com/sitemap.xml"]
+    },
+    {
+      "id": "anf",
+      "name": "ANF Kurmanji",
+      "domains": ["anf-news.com"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://kurmanci.anf-news.com/"],
+      "sitemaps": ["https://kurmanci.anf-news.com/sitemap.xml"]
+    },
+    {
+      "id": "botantimes",
+      "name": "Botan Times",
+      "domains": ["botantimes.com"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://botantimes.com/"],
+      "sitemaps": ["https://botantimes.com/sitemap.xml"]
+    },
+    {
+      "id": "azadiya_welat",
+      "name": "Azadiya Welat",
+      "domains": ["azadiyawelat1.com"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://azadiyawelat1.com/"],
+      "sitemaps": ["https://azadiyawelat1.com/sitemap.xml"]
+    },
+    {
+      "id": "jinha",
+      "name": "JINHA",
+      "domains": ["jinhaagency.com"],
+      "language_path": "/ku",
+      "article_paths": ["/ku/"],
+      "homepages": ["https://jinhaagency.com/ku"],
+      "sitemaps": ["https://jinhaagency.com/sitemap.xml"]
+    },
+    {
+      "id": "bianet",
+      "name": "Bianet Kurdish",
+      "domains": ["bianet.org"],
+      "language_path": "/",
+      "article_paths": ["/yazi/"],
+      "homepages": ["https://bianet.org/"],
+      "feeds": ["https://bianet.org/api/Category/CategoryLatestContentGetList?LanguageId=4&CategoryId=3"],
+      "sitemaps": ["https://bianet.org/sitemap.xml"]
+    },
+    {
+      "id": "avestakurd",
+      "name": "AvestaKurd",
+      "domains": ["avestakurd.net"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://www.avestakurd.net/"],
+      "sitemaps": ["https://www.avestakurd.net/sitemap.xml"]
+    },
+    {
+      "id": "newroz",
+      "name": "Newroz",
+      "domains": ["rojnameyanewroz3.com"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://rojnameyanewroz3.com/"],
+      "sitemaps": ["https://rojnameyanewroz3.com/sitemap.xml"]
+    },
+    {
+      "id": "rojnews",
+      "name": "Rojnews Kurmancî",
+      "domains": ["rojnews.news"],
+      "language_path": "/ku",
+      "article_paths": ["/ku/"],
+      "homepages": ["https://rojnews.news/ku/"],
+      "sitemaps": ["https://rojnews.news/sitemap_index.xml", "https://rojnews.news/sitemap.xml"]
+    },
+    {
+      "id": "pukmedia",
+      "name": "PUK Media Kurmanji (research source)",
+      "domains": ["pukmedia.com"],
+      "language_path": "/ku",
+      "article_paths": ["/ku/"],
+      "homepages": ["https://pukmedia.com/ku/"],
+      "sitemaps": ["https://pukmedia.com/sitemap.xml"]
+    },
+    {
+      "id": "medyanews",
+      "name": "Medya News Kurdish (research source)",
+      "domains": ["medyanews.net"],
+      "language_path": "/ku",
+      "article_paths": ["/ku/"],
+      "homepages": ["https://medyanews.net/ku/"],
+      "sitemaps": ["https://medyanews.net/sitemap.xml"]
+    },
+    {
+      "id": "semakurd",
+      "name": "Sema Kurd (research source)",
+      "domains": ["semakurd.net"],
+      "language_path": "/",
+      "article_paths": ["/"],
+      "homepages": ["https://semakurd.net/"],
+      "sitemaps": ["https://semakurd.net/sitemap.xml"]
+    },
+    {
+      "id": "kovarabir",
+      "name": "Kovara Bîr",
+      "domains": ["kovarabir.com"],
+      "language_path": "/yazi/",
+      "article_paths": ["/yazi/"],
+      "homepages": ["https://kovarabir.com/"],
+      "feeds": ["https://kovarabir.com/rss.xml"],
+      "sitemaps": ["https://kovarabir.com/sitemap.xml"]
+    },
+    {
+      "id": "diyarbakir_municipality",
+      "name": "Diyarbakır Metropolitan Municipality Kurmanji",
+      "domains": ["diyarbakir.bel.tr"],
+      "language_path": "/ku/",
+      "article_paths": ["/ku/calaki/"],
+      "homepages": ["https://www.diyarbakir.bel.tr/ku"],
+      "sitemaps": ["https://www.diyarbakir.bel.tr/sitemap.xml"]
+    }
+  ]
+}
