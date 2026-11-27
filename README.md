@@ -4,6 +4,10 @@
 
 This project collects Kurmanji articles, documents and sentences. The importer reads a pinned Hugging Face JSONL release, the Pewan archive, OPUS Bianet, two Interdialect files and the Kurdish Wikipedia dump. The crawler adds articles from the sites listed in `crawler_sources.json`. The store deduplicates records by normalized text, compresses them with zlib in SQLite and exports them to `corpus.jsonl.zst`.
 
+## Corpus size on 27 November 2026
+
+The server held 2,181,580 deduplicated text records, including 13,145 articles collected directly from 20 websites and 2,168,435 records imported from existing corpora. Imported records range from individual sentences to full documents.
+
 ## Linux setup
 
 Place the repository in `/opt/kurdish-corpus` and install Python 3 with venv support. Create the service account, data directory and virtual environment.
