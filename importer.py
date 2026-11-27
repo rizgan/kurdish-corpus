@@ -15,6 +15,7 @@ from store import Store, migrate_store
 
 HF_REPO = "kurdish-tech/KurdishCorpus-clean"
 HF_REVISION = "5c446d5ff96bb03aff48dbab83731935f17987fd"
+HF_SNAPSHOT_BYTES = 7_681_828_199
 HF_URL = f"https://huggingface.co/datasets/{HF_REPO}/resolve/{HF_REVISION}/corpus_v2_open_release.jsonl"
 INTERDIALECT_REVISION = "a27afa395992c388c777bd0b1dbc0e412484550a"
 INTERDIALECT_FILES = {
@@ -51,7 +52,11 @@ def import_hf(store: Store, data_dir: Path) -> None:
     checkpoint_key = "hf:full-jsonl"
     state = store.get_checkpoint(checkpoint_key, {"offset": 0, "records": 0})
     offset, records = int(state["offset"]), int(state["records"])
+    if offset == HF_SNAPSHOT_BYTES:
+        return
     if local_source.is_file():
+        if local_source.stat().st_size != HF_SNAPSHOT_BYTES:
+            raise ValueError("Local HF snapshot has an unexpected size")
         stream = local_source.open("rb")
         stream.seek(offset)
     else:
@@ -65,10 +70,7 @@ def import_hf(store: Store, data_dir: Path) -> None:
         for line in stream:
             offset += len(line)
             records += 1
-            try:
-                row = json.loads(line)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                continue
+            row = json.loads(line)
             if row.get("lid_label") == "kmr_Latn":
                 store.add(
                     row.get("text", ""), row.get("url") or "", "HuggingFace",
@@ -86,6 +88,8 @@ def import_hf(store: Store, data_dir: Path) -> None:
                 store.set_checkpoint(checkpoint_key, {"offset": offset, "records": records})
                 if records % 100_000 == 0:
                     print(f"HF rows: {records:,}", flush=True)
+    if offset != HF_SNAPSHOT_BYTES:
+        raise OSError(f"HF snapshot ended at byte {offset}; expected {HF_SNAPSHOT_BYTES}")
     store.set_checkpoint(checkpoint_key, {"offset": offset, "records": records})
 
 
