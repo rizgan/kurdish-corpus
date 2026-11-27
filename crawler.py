@@ -244,6 +244,8 @@ class Crawler:
 
     def _queue_page(self, url, source, now=None):
         url = ascii_iri(url)
+        if source == "channel8" and host_key(url) == "channel8.com":
+            url = url.replace("://channel8.com/", "://www.channel8.com/", 1)
         if not self._allowed_page(url, source):
             return
         url, _ = urllib.parse.urldefrag(url)
@@ -369,6 +371,9 @@ class Crawler:
             "Accept": "text/html,application/xhtml+xml,application/xml,text/xml;q=0.9,*/*;q=0.5",
             "Accept-Encoding": "gzip, deflate, zstd",
         })
+        if host == "www.kurdistantv.net":
+            req.add_header("Accept", "*/*")
+            req.add_header("Accept-Encoding", "gzip, deflate")
         self.last_request[host] = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
