@@ -221,6 +221,54 @@
       "article_regex": "^/(?:news\\.php|nivis/[^/]+_\\d+/?)$",
       "homepages": ["https://diyarname.com/", "https://diyarname.com/category.php?Idx=102", "https://diyarname.com/category.php?Idx=100"],
       "sitemaps": []
+    },
+    {
+      "id": "presidency",
+      "name": "Kurdistan Region Presidency",
+      "domains": [
+        "presidency.gov.krd"
+      ],
+      "language_path": "/kmr/",
+      "trusted_language_path": "/kmr/",
+      "article_regex": "^/kmr/(?!news/|about/?$)[^/]+-[^/]+/?$",
+      "homepages": [
+        "https://presidency.gov.krd/kmr/news/?p=1"
+      ],
+      "sitemaps": [
+        "https://presidency.gov.krd/kmr/sitemap.xml"
+      ]
+    },
+    {
+      "id": "kurdistantv",
+      "name": "Kurdistan TV",
+      "domains": [
+        "kurdistantv.net"
+      ],
+      "language_path": "/kurmanci/",
+      "trusted_language_path": "/kurmanci/",
+      "article_regex": "^/kurmanci/nuce/[0-9]+/?$",
+      "homepages": [
+        "https://www.kurdistantv.net/kurmanci"
+      ],
+      "sitemaps": [
+        "https://www.kurdistantv.net/sitemap.xml"
+      ]
+    },
+    {
+      "id": "channel8",
+      "name": "Channel 8",
+      "domains": [
+        "channel8.com"
+      ],
+      "language_path": "/kurmanci/",
+      "trusted_language_path": "/kurmanci/",
+      "article_regex": "^/kurmanci/news/[a-f0-9-]{36}/?$",
+      "homepages": [
+        "https://channel8.com/kurmanci"
+      ],
+      "sitemaps": [
+        "https://channel8.com/sitemap.xml"
+      ]
     }
   ]
 }
